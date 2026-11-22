@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrustWork — Decentralized Milestone Escrow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+
+  <!-- Top Navbar -->
+  <nav class="border-b border-slate-800 bg-slate-900/80 backdrop-blur px-6 py-4 flex justify-between items-center">
+    <div>
+      <h1 class="text-xl font-bold text-emerald-400">TrustWork Escrow</h1>
+      <p class="text-xs text-slate-400">Non-Custodial Milestone Settlement on Sepolia</p>
+    </div>
+    <div class="flex items-center gap-4">
+      <span id="roleBadge" class="hidden px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+        Role: Unknown
+      </span>
+      <button id="connectBtn" onclick="connectWallet()" class="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold px-4 py-2 rounded-lg transition">
+        Connect MetaMask
+      </button>
+    </div>
+  </nav>
+
+  <main class="max-w-5xl mx-auto p-6 space-y-8">
+
+    <!-- Wallet & Contract Info Bar -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900 border border-slate-800 p-4 rounded-xl text-sm">
+      <div>
+        <span class="text-slate-400 block">Connected Wallet</span>
+        <span id="walletAddress" class="font-mono text-slate-200">Not connected</span>
+      </div>
+      <div>
+        <span class="text-slate-400 block">Wallet Balance</span>
+        <span id="walletBalance" class="font-semibold text-emerald-400">0.0000 ETH</span>
+      </div>
+      <div>
+        <span class="text-slate-400 block">Escrow Vault Balance</span>
+        <span id="contractBalance" class="font-semibold text-amber-400">0.0000 ETH</span>
+      </div>
+    </div>
+
+    <!-- Fee Comparison Card (Great for Live Demo / Viva) -->
+    <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">Why Decentralized Escrow? (On a $500 Milestone)</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div class="p-4 rounded-lg bg-rose-950/30 border border-rose-800/40">
+          <div class="font-bold text-rose-400 mb-1">Traditional Platforms (Fiverr / Upwork)</div>
+          <ul class="text-slate-300 space-y-1 text-xs">
+            <li>• <strong>20% Freelancer Fee</strong> + 5.5% Buyer Fee + FX spread</li>
+            <li>• Freelancer receives <strong>~$372</strong></li>
+            <li>• <strong>14-day mandatory clearing hold</strong> before withdrawal</li>
+          </ul>
+        </div>
+        <div class="p-4 rounded-lg bg-emerald-950/30 border border-emerald-800/40">
+          <div class="font-bold text-emerald-400 mb-1">TrustWork Smart Contract Escrow</div>
+          <ul class="text-slate-300 space-y-1 text-xs">
+            <li>• <strong>2% Flat Protocol Fee</strong> (enforced transparently on-chain)</li>
+            <li>• Freelancer receives <strong>$490 (98%)</strong></li>
+            <li>• <strong>Instant atomic settlement</strong> upon milestone approval</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Client Action: Create Milestone -->
+    <div id="clientCreateSection" class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
+      <h2 class="text-lg font-semibold text-white">1. Client: Create New Milestone</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <input id="mDesc" type="text" placeholder="e.g., Landing Page Design" class="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+        <input id="mAmount" type="text" placeholder="Amount in ETH (e.g., 0.005)" class="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+        <button onclick="addMilestone()" class="bg-indigo-600 hover:bg-indigo-500 font-semibold py-2 px-4 rounded-lg text-sm transition">
+          + Add Milestone
+        </button>
+      </div>
+    </div>
+
+    <!-- Milestones List -->
+    <div class="space-y-4">
+      <div class="flex justify-between items-center">
+        <h2 class="text-lg font-semibold text-white">2. Project Milestones & Live State Machine</h2>
+        <button onclick="loadMilestones()" class="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700">
+          ↻ Refresh Chain State
+        </button>
+      </div>
+      <div id="milestonesContainer" class="space-y-4">
+        <p class="text-slate-400 text-sm">Connect your MetaMask wallet to load milestones from Sepolia...</p>
+      </div>
+    </div>
+
+    <!-- Status Toast -->
+    <div id="statusBox" class="hidden fixed bottom-5 right-5 max-w-md bg-slate-800 border border-emerald-500/50 text-slate-100 px-4 py-3 rounded-xl shadow-2xl text-sm"></div>
+  </main>
+
+  <script>
+    // ==========================================
+    // PASTE YOUR DEPLOYED SEPOLIA ADDRESS BELOW
+    // ==========================================
+    const CONTRACT_ADDRESS = "0x1371D34B8D0Ce4ee0857355A911C4D349AD28Aa2";
+
+    const ABI = [
+      "function client() view returns (address)",
+      "function freelancer() view returns (address)",
+      "function arbiter() view returns (address)",
+      "function platformWallet() view returns (address)",
+      "function milestones(uint256) view returns (string description, uint256 amount, string deliverableIPFSHash, uint8 state)",
+      "function addMilestone(string _desc, uint256 _amount)",
+      "function fundMilestone(uint256 _id) payable",
+      "function submitWork(uint256 _id, string _ipfsHash)",
+      "function approveAndPay(uint256 _id)",
+      "function raiseDispute(uint256 _id)",
+      "function resolveDispute(uint256 _id, uint256 _freelancerShare)"
+    ];
+
+    const STATE_NAMES = ["Created (Unfunded)", "Funded (Locked)", "Work Submitted", "Approved & Paid", "Disputed", "Resolved"];
+    const STATE_COLORS = [
+      "bg-slate-700 text-slate-200",
+      "bg-amber-500/20 text-amber-300 border-amber-500/40",
+      "bg-blue-500/20 text-blue-300 border-blue-500/40",
+      "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
+      "bg-rose-500/20 text-rose-300 border-rose-500/40",
+      "bg-purple-500/20 text-purple-300 border-purple-500/40"
+    ];
+
+    let provider, signer, contract, userAddress;
+    let roles = {};
+
+    function showStatus(msg) {
+      const box = document.getElementById("statusBox");
+      box.innerText = msg;
+      box.classList.remove("hidden");
+      setTimeout(() => box.classList.add("hidden"), 6000);
+    }
+
+    async function connectWallet() {
+      if (!window.ethereum) return alert("Please install MetaMask!");
+      provider = new ethers.BrowserProvider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      signer = await provider.getSigner();
+      userAddress = (await signer.getAddress()).toLowerCase();
+
+      contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+
+      // Load contract roles
+      roles.client = (await contract.client()).toLowerCase();
+      roles.freelancer = (await contract.freelancer()).toLowerCase();
+      roles.arbiter = (await contract.arbiter()).toLowerCase();
+      roles.platform = (await contract.platformWallet()).toLowerCase();
+
+      // Detect active role
+      let roleLabel = "Observer";
+      if (userAddress === roles.client) roleLabel = "Client (Employer)";
+      else if (userAddress === roles.freelancer) roleLabel = "Freelancer (Worker)";
+      else if (userAddress === roles.arbiter) roleLabel = "Arbiter (Dispute Judge)";
+      else if (userAddress === roles.platform) roleLabel = "Platform Treasury (2% Fee)";
+
+      document.getElementById("connectBtn").innerText = "Connected";
+      document.getElementById("walletAddress").innerText = userAddress.slice(0, 6) + "..." + userAddress.slice(-4);
+      const badge = document.getElementById("roleBadge");
+      badge.innerText = "Role: " + roleLabel;
+      badge.classList.remove("hidden");
+
+      await refreshBalances();
+      await loadMilestones();
+    }
+
+    async function refreshBalances() {
+      const uBal = await provider.getBalance(userAddress);
+      const cBal = await provider.getBalance(CONTRACT_ADDRESS);
+      document.getElementById("walletBalance").innerText = Number(ethers.formatEther(uBal)).toFixed(4) + " ETH";
+      document.getElementById("contractBalance").innerText = Number(ethers.formatEther(cBal)).toFixed(4) + " ETH";
+    }
+
+    async function loadMilestones() {
+      const container = document.getElementById("milestonesContainer");
+      container.innerHTML = "";
+      let i = 0;
+      while (true) {
+        try {
+          const m = await contract.milestones(i);
+          renderMilestoneCard(i, m);
+          i++;
+        } catch (e) {
+          break; // Reached end of dynamic array
+        }
+      }
+      if (i === 0) {
+        container.innerHTML = `<p class="text-slate-400 text-sm">No milestones created yet. Switch to Client wallet to create Milestone #0.</p>`;
+      }
+    }
+
+    function renderMilestoneCard(id, m) {
+      const desc = m[0];
+      const amountWei = m[1];
+      const amountEth = ethers.formatEther(amountWei);
+      const ipfs = m[2];
+      const state = Number(m[3]);
+
+      let actionsHtml = "";
+
+      // State 0: Created -> Client can Fund
+      if (state === 0 && userAddress === roles.client) {
+        actionsHtml += `<button onclick="fundMilestone(${id}, '${amountWei}')" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold px-4 py-2 rounded-lg text-xs">Lock ${amountEth} ETH in Escrow</button>`;
+      }
+
+      // State 1: Funded -> Freelancer can Submit IPFS Hash
+      if (state === 1 && userAddress === roles.freelancer) {
+        actionsHtml += `
+          <div class="flex gap-2 mt-2">
+            <input id="ipfs_${id}" type="text" placeholder="Paste IPFS CID (e.g., QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco)" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs" />
+            <button onclick="submitWork(${id})" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold px-4 py-1.5 rounded-lg text-xs">Submit Work</button>
+          </div>`;
+      }
+
+      // State 2: Submitted -> Client can Approve & Pay
+      if (state === 2 && userAddress === roles.client) {
+        actionsHtml += `<button onclick="approveAndPay(${id})" class="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold px-4 py-2 rounded-lg text-xs">Approve & Release Payout (98% Freelancer / 2% Fee)</button>`;
+      }
+
+      // State 1 or 2 -> Client or Freelancer can Raise Dispute
+      if ((state === 1 || state === 2) && (userAddress === roles.client || userAddress === roles.freelancer)) {
+        actionsHtml += `<button onclick="raiseDispute(${id})" class="bg-rose-600 hover:bg-rose-500 text-white font-semibold px-3 py-2 rounded-lg text-xs ml-2">Raise Dispute</button>`;
+      }
+
+      // State 4: Disputed -> Arbiter can Resolve (50/50 split demo button or custom)
+      if (state === 4 && userAddress === roles.arbiter) {
+        const halfWei = amountWei / 2n;
+        actionsHtml += `
+          <div class="flex gap-2 mt-2">
+            <button onclick="resolveDispute(${id}, '${halfWei}')" class="bg-purple-600 hover:bg-purple-500 text-white font-semibold px-4 py-2 rounded-lg text-xs">Resolve 50/50 Split</button>
+            <button onclick="resolveDispute(${id}, '${amountWei}')" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2 rounded-lg text-xs">Award 100% to Freelancer</button>
+          </div>`;
+      }
+
+      const card = `
+        <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-3">
+          <div class="flex justify-between items-start">
+            <div>
+              <span class="text-xs text-slate-400">Milestone #${id}</span>
+              <h3 class="text-base font-bold text-white">${desc}</h3>
+            </div>
+            <div class="text-right">
+              <span class="px-3 py-1 rounded-full text-xs font-semibold border ${STATE_COLORS[state]}">${STATE_NAMES[state]}</span>
+              <div class="text-sm font-mono text-emerald-400 mt-1">${amountEth} ETH</div>
+            </div>
+          </div>
+          ${ipfs ? `<div class="text-xs bg-slate-950 p-2.5 rounded border border-slate-800 font-mono text-blue-300">IPFS Proof CID: <a href="https://ipfs.io/ipfs/${ipfs}" target="_blank" class="underline">${ipfs}</a></div>` : ""}
+          <div class="pt-1">${actionsHtml}</div>
+        </div>
+      `;
+      document.getElementById("milestonesContainer").innerHTML += card;
+    }
+
+    async function addMilestone() {
+      const desc = document.getElementById("mDesc").value;
+      const amt = document.getElementById("mAmount").value;
+      if (!desc || !amt) return alert("Enter description and ETH amount");
+      showStatus("Confirm milestone creation in MetaMask...");
+      const tx = await contract.addMilestone(desc, ethers.parseEther(amt));
+      await tx.wait();
+      showStatus("Milestone created on-chain!");
+      await refreshBalances();
+      await loadMilestones();
+    }
+
+    async function fundMilestone(id, amountWei) {
+      showStatus("Confirm escrow deposit in MetaMask...");
+      const tx = await contract.fundMilestone(id, { value: amountWei });
+      await tx.wait();
+      showStatus("Funds locked in smart contract!");
+      await refreshBalances();
+      await loadMilestones();
+    }
+
+    async function submitWork(id) {
+      const ipfs = document.getElementById(`ipfs_${id}`).value;
+      if (!ipfs) return alert("Enter an IPFS hash string");
+      showStatus("Submitting deliverable CID to blockchain...");
+      const tx = await contract.submitWork(id, ipfs);
+      await tx.wait();
+      showStatus("Deliverable hash recorded on-chain!");
+      await refreshBalances();
+      await loadMilestones();
+    }
+
+    async function approveAndPay(id) {
+      showStatus("Approving work and triggering atomic payout...");
+      const tx = await contract.approveAndPay(id);
+      await tx.wait();
+      showStatus("Paid! 98% sent to Freelancer, 2% to Platform Treasury.");
+      await refreshBalances();
+      await loadMilestones();
+    }
+
+    async function raiseDispute(id) {
+      showStatus("Flagging milestone as Disputed...");
+      const tx = await contract.raiseDispute(id);
+      await tx.wait();
+      showStatus("Dispute raised! Switch to Arbiter wallet to resolve.");
+      await loadMilestones();
+    }
+
+    async function resolveDispute(id, freelancerShareWei) {
+      showStatus("Executing Arbiter settlement...");
+      const tx = await contract.resolveDispute(id, freelancerShareWei);
+      await tx.wait();
+      showStatus("Dispute resolved and funds distributed!");
+      await refreshBalances();
+      await loadMilestones();
+    }
+
+    // Automatically reload UI whenever user switches accounts in MetaMask
+    if (window.ethereum) {
+      window.ethereum.on("accountsChanged", () => connectWallet());
+    }
+  </script>
+</body>
+</html>
